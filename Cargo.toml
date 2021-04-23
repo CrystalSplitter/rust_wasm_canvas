@@ -1,0 +1,22 @@
+[package]
+name = "js_canvas"
+version = "0.1.0"
+authors = ["CrystalSplitter <gamewhizzit@gmail.com>"]
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+itertools = "0.10.0"
+wasm-bindgen = "0.2.63"
+console_error_panic_hook = { version = "0.1.6", optional = true }
+
+# Consider removing, as wee_alloc is slow.
+wee_alloc = { version = "0.4.5", optional = true }
+
+[profile.release]
+# Optimise for code size.
+opt-level = "s"
