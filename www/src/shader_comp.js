@@ -58,6 +58,7 @@ export function webglMain(gl, fragShaderSrc, vertShaderSrc) {
     const vertShader = createShader(gl, gl.VERTEX_SHADER, vertShaderSrc);
     const fragShader = createShader(gl, gl.FRAGMENT_SHADER, fragShaderSrc);
     const prgm = createProgram(gl, vertShader, fragShader);
+    gl.useProgram(prgm);
 
     // ================================================================
     // -- VAO --
@@ -83,18 +84,23 @@ export function webglMain(gl, fragShaderSrc, vertShaderSrc) {
     // ================================================================
 
     // Here is when we may want to resize the canvas...
-
     // Resize the viewport to the current canvas size.
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+
     // Set the clear color.
     gl.clearColor(0, 0, 0, 0);
     // Clear the color buffer.
     gl.clear(gl.COLOR_BUFFER_BIT);
 
     // ================================================================
-    // -- Program connection --
+    // -- Program variable set ups --
     // ================================================================
-    gl.useProgram(prgm);
+    let resolutionUniformLocation = gl.getUniformLocation(prgm, "u_resolution");
+    gl.uniform2f(resolutionUniformLocation, gl.canvas.width, gl.canvas.height);
+
+    let colorULoc = gl.getUniformLocation(prgm, "u_color");
+    gl.uniform4f(colorULoc, 0, 0, 0, 1.0);
 
     // ================================================================
     // --  Draw using the program --
@@ -102,15 +108,25 @@ export function webglMain(gl, fragShaderSrc, vertShaderSrc) {
     const primitiveType = gl.TRIANGLES;
     const arrayOffset = 0;
     const vertCount = 3;
-    for (let i = 0; i < 100; i++) {
-        let rX = Math.random() - 0.5;
-        let rY = Math.random() - 0.5;
+
+    let lastRX = 0;
+    let lastRY = 0;
+    const toRun = () => {
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        let rX = Math.max(0, Math.random() * 10 - 5 + lastRX);
+        let rY = Math.max(0, Math.random() * 10 - 5 + lastRY);
         const vertPositions = [
             rX, rY,
-            rX, rY + 0.5,
-            rX + 0.7, rY,
+            rX, rY + 50,
+            rX + 70, rY,
         ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertPositions), gl.STATIC_DRAW);
         gl.drawArrays(primitiveType, arrayOffset, vertCount);
+
+        lastRX = rX;
+        lastRY = rY;
+        setTimeout(toRun, 1000/30);
     }
+    toRun();
 }
