@@ -1,0 +1,20 @@
+@mixin firefox-only {
+    @at-root {
+        @-moz-document url-prefix() {
+            & {
+                @content;
+            }
+        }
+    }
+}
+
+
+canvas {
+    image-rendering: pixelated;
+    @include firefox-only {
+        image-rendering: crisp-edges;
+    }
+    width: 2048px;
+    height: 1536px;
+}
+
