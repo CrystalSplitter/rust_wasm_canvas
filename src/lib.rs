@@ -1,4 +1,5 @@
 mod util;
+mod m3;
 
 use std::fmt;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -153,4 +154,9 @@ pub fn greet() -> String {
     };
     let univ = Universe::new(10, 10, conf);
     univ.render()
+}
+
+#[wasm_bindgen]
+pub fn get_transform_mat(x: f32, y: f32) -> m3::M3x3 {
+    m3::mult3x3(&m3::scale(0.5, 0.5,), &m3::translation(x, y))
 }
