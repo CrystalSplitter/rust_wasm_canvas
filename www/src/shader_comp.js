@@ -1,5 +1,5 @@
-import {get_transform_mat} from "wasm-canvas-js";
-import {getMousePos} from "./get_mouse";
+import {bind_game, get_transform_mat} from "wasm-canvas-js";
+import {InputBindings, getMousePos} from "./get_mouse";
 
 /**
  *
@@ -54,7 +54,7 @@ function bindInputs(canvas, bindObject) {
 
 export function webglMain(canvas, fragShaderSrc, vertShaderSrc) {
     const gl = canvas.getContext("webgl2", {antialias: false});
-    const inputBinding = {mousePos: {x: 0.0, y: 0.0}};
+    const inputBinding = new InputBindings(0.0, 0.0);
     bindInputs(canvas, inputBinding);
     // ================================================================
     // -- Set up buffers --
@@ -110,14 +110,14 @@ export function webglMain(canvas, fragShaderSrc, vertShaderSrc) {
     gl.uniform2f(resolutionUniformLocation, gl.canvas.width, gl.canvas.height);
 
     let colorULoc = gl.getUniformLocation(prgm, "u_color");
-    gl.uniform4f(colorULoc, 0, 0, 0, 1.0);
+    gl.uniform4f(colorULoc, 1.0, 0, 0, 1.0);
 
     let transformationMatrixULoc = gl.getUniformLocation(prgm, "u_transformationMatrix");
 
     // ================================================================
     // --  Draw using the program --
     // ================================================================
-    setUpGeometry(gl, 0, 0);
+    //setUpGeometry(gl, 0, 0);
 
     const primitiveType = gl.TRIANGLES;
     const arrayOffset = 0;
@@ -125,30 +125,20 @@ export function webglMain(canvas, fragShaderSrc, vertShaderSrc) {
 
     let lastDeltaX = 0;
     let lastDeltaY = 0;
-    const drawScene = () => {
-        gl.clear(gl.COLOR_BUFFER_BIT);
 
+    //bind_game(gl, transformationMatrixULoc);
+
+    const drawScene = () => {
         const transformMat = get_transform_mat(
-            inputBinding.mousePos.x/1.0,
-            -inputBinding.mousePos.y/1.0 + canvas.height,
+            0, 0
+            //inputBinding.mouseX/1.0,
+            //-inputBinding.mouseY/1.0 + canvas.height,
         );
         gl.uniformMatrix3fv(transformationMatrixULoc, false, transformMat);
 
-        gl.drawArrays(primitiveType, arrayOffset, vertCount);
-
-        //lastDeltaX = rX;
-        //lastDeltaY = rY;
-        setTimeout(drawScene, 1000/48);
+        //gl.drawArrays(primitiveType, arrayOffset, vertCount);
+        bind_game(gl, prgm, inputBinding, ["u_transformationMatrix"], canvas);
+        setTimeout(drawScene, 1000/60);
     }
     drawScene();
 }
-
-function setUpGeometry(gl, x, y) {
-    const vertPositions = [
-        x, y,
-        y, x + 50,
-        x + 70, y,
-    ];
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertPositions), gl.STATIC_DRAW);
-}
-

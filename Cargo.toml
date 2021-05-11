@@ -10,13 +10,33 @@ crate-type = ["cdylib", "rlib"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-itertools = "0.10.0"
-wasm-bindgen = "0.2.63"
-console_error_panic_hook = { version = "0.1.6", optional = true }
+itertools = "^0.10.0"
+wasm-bindgen = "^0.2.63"
+nalgebra = "^0.26.2"
+bitflags = "^1.2.1"
+console_error_panic_hook = { version = "0.1.6" }
+js-sys = "^0.3.50"
+serde-wasm-bindgen = "^0.1.3"
 
 # Consider removing, as wee_alloc is slow.
 wee_alloc = { version = "0.4.5", optional = true }
 
+[dependencies.web-sys]
+version = "^0.3.50"
+features = [
+    "DomRect",
+    "Element",
+    "HtmlCanvasElement",
+    "MouseEvent",
+    "WebGl2RenderingContext",
+    "WebGlActiveInfo",
+    "WebGlProgram",
+    "WebGlUniformLocation",
+    "WebGlVertexArrayObject",
+    "console",
+]
+
 [profile.release]
 # Optimise for code size.
 opt-level = "s"
+

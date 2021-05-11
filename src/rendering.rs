@@ -1,0 +1,190 @@
+use std::collections::HashMap;
+use std::rc::Rc;
+
+use js_sys::Float32Array;
+use web_sys::{console, WebGl2RenderingContext as Gl, WebGlProgram, WebGlUniformLocation};
+
+use crate::geometry::VertArray;
+use crate::transform::Transform;
+
+#[derive(Debug, Clone, Copy)]
+enum DrawnStatus {
+    NeedsDraw,
+    Drawn,
+}
+
+#[derive(Debug, Clone)]
+pub struct RenderableQueues {
+    forward_queue: Vec<(DrawnStatus, Rc<RenderItem>)>,
+    reverse_queue: Vec<(DrawnStatus, Rc<RenderItem>)>,
+}
+
+impl RenderableQueues {
+    pub fn new() -> Self {
+        Self {
+            forward_queue: Vec::new(),
+            reverse_queue: Vec::new(),
+        }
+    }
+
+    pub fn push_forward_queue(&mut self, item: Rc<RenderItem>) {
+        self.forward_queue.push((DrawnStatus::NeedsDraw, item));
+    }
+
+    pub fn push_reverse_queue(&mut self, item: Rc<RenderItem>) {
+        self.reverse_queue.push((DrawnStatus::NeedsDraw, item));
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ProgramData {
+    program: Rc<WebGlProgram>,
+    uniforms: HashMap<String, Rc<WebGlUniformLocation>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RenderItem {
+    program_data: ProgramData,
+    enabled: bool,
+    verts: VertArray,
+    vert_stride: u32,
+    transform: Rc<Transform>,
+}
+
+impl RenderItem {
+    pub fn new(program_data: ProgramData, transform: Rc<Transform>, verts: &[f32]) -> RenderItem
+    {
+        RenderItem {
+            program_data,
+            enabled: true,
+            verts: VertArray::from(verts),
+            vert_stride: 2,
+            transform,
+        }
+    }
+
+    pub fn disable(mut self) -> Self {
+        self.enabled = false;
+        self
+    }
+
+    pub fn enable(mut self) -> Self {
+        self.enabled = true;
+        self
+    }
+
+    pub fn program_data(&self) -> &ProgramData {
+        &self.program_data
+    }
+    /*
+    pub fn set_uniforms(self, names: &[String]) -> Self {
+        for n in names {
+            let n_clone = n.clone();
+            let loc: WebGlUniformLocation = self
+                .program_data
+                .program
+                .as_ref()
+                .get_uniform_location(&self.program_data.program, &n_clone)
+                .expect("Expected uniform location.");
+            self.program_data.uniforms.insert(n_clone, loc);
+        }
+        self
+    }
+    */
+}
+
+pub struct Renderer<'a> {
+    pub ctx: &'a Gl,
+}
+
+impl<'a> Renderer<'a> {
+    
+    pub fn debug(&self) {
+        self.ctx.buffer_data_with_opt_array_buffer(
+            Gl::ARRAY_BUFFER,
+            Some(&VertArray::from(vec![0., 0., 1000., 1000.].as_ref()).buffer()),
+            Gl::STATIC_DRAW,
+        );
+        self.ctx.draw_arrays(
+            Gl::LINES,
+            0,
+            4 / 2,
+        );
+    }
+
+    pub fn make_program_data<T>(&self, program: Rc::<WebGlProgram>, uniform_names: T) -> ProgramData
+        where T: IntoIterator, T::Item: ToString, T::Item: Eq, T::Item: std::hash::Hash
+    {
+        let mut m: HashMap<String, _> = HashMap::new();
+        for n in uniform_names {
+            let n_string = n.to_string();
+            let loc = Rc::new(self.ctx.get_uniform_location(program.as_ref(), &n_string).expect("Expecting to find uniform."));
+            m.insert(n_string, loc);
+        }
+        ProgramData {
+            program,
+            uniforms: m,
+        }
+    }
+
+    pub fn render_all(&self, queues: &RenderableQueues) {
+        self.ctx.clear(Gl::COLOR_BUFFER_BIT);
+        for item_tup in queues.forward_queue.iter() {
+            self.draw_item(item_tup);
+        }
+        for item_tup in queues.reverse_queue.iter().rev() {
+            self.draw_item(item_tup);
+        }
+    }
+
+    fn draw_item(&self, item_tup: &(DrawnStatus, Rc<RenderItem>)) {
+        let (drawn_status, item) = item_tup;
+        match drawn_status {
+            DrawnStatus::NeedsDraw => {
+                self.apply_tf(item, &item.transform);
+                self.first_time_draw_setup(item);
+                console::log_1(&"Drawn".into());
+            }
+            DrawnStatus::Drawn => {
+                self.apply_tf(item, &item.transform);
+            }
+        }
+        self.ctx.draw_arrays(
+            Gl::LINES,
+            0,
+            (4 / item.vert_stride) as i32,
+        );
+    }
+
+    fn first_time_draw_setup(&self, item: &RenderItem) {
+        self.ctx.buffer_data_with_opt_array_buffer(
+            Gl::ARRAY_BUFFER,
+            Some(&VertArray::from(vec![0., 0., 1000., 1000.].as_ref()).buffer()),
+            //Some(&item.verts.buffer()),
+            Gl::STATIC_DRAW,
+        );
+    }
+
+    fn apply_tf(&self, item: &RenderItem, tf: &Transform) {
+        let fake_tf_vec = vec![1., 0., 0., 0., 1., 0., 50., 50., 1.];
+        match item.program_data().uniforms.get("u_transformationMatrix") {
+            Some(loc) => {
+                self.ctx.uniform_matrix3fv_with_f32_array(
+                    Some(&*loc),
+                    false,
+                    //&tf.to_f32_vec(),
+                    &fake_tf_vec,
+                );
+            }
+            None => {
+                console::log_1(&"Yo wtf".into());
+                panic!()
+            }
+        }
+        self.ctx.draw_arrays(
+            Gl::LINES,
+            0,
+            (item.verts.length() / item.vert_stride) as i32,
+        );
+    }
+}
