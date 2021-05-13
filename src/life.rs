@@ -1,5 +1,5 @@
-mod util;
 mod m3;
+mod util;
 
 use std::fmt;
 use wasm_bindgen::prelude::wasm_bindgen;

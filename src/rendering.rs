@@ -1,8 +1,11 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use js_sys::Float32Array;
-use web_sys::{console, WebGl2RenderingContext as Gl, WebGlProgram, WebGlUniformLocation};
+use web_sys::{
+    console, WebGl2RenderingContext as Gl, WebGlProgram, WebGlUniformLocation as GlULoc,
+};
 
 use crate::geometry::VertArray;
 use crate::transform::Transform;
@@ -39,7 +42,7 @@ impl RenderableQueues {
 #[derive(Debug, Clone)]
 pub struct ProgramData {
     program: Rc<WebGlProgram>,
-    uniforms: HashMap<String, Rc<WebGlUniformLocation>>,
+    uniforms: HashMap<String, Rc<GlULoc>>,
 }
 
 #[derive(Debug, Clone)]
@@ -48,12 +51,15 @@ pub struct RenderItem {
     enabled: bool,
     verts: VertArray,
     vert_stride: u32,
-    transform: Rc<Transform>,
+    transform: Rc<RefCell<Transform>>,
 }
 
 impl RenderItem {
-    pub fn new(program_data: ProgramData, transform: Rc<Transform>, verts: &[f32]) -> RenderItem
-    {
+    pub fn new(
+        program_data: ProgramData,
+        transform: Rc<RefCell<Transform>>,
+        verts: &[f32],
+    ) -> RenderItem {
         RenderItem {
             program_data,
             enabled: true,
@@ -76,49 +82,41 @@ impl RenderItem {
     pub fn program_data(&self) -> &ProgramData {
         &self.program_data
     }
-    /*
-    pub fn set_uniforms(self, names: &[String]) -> Self {
-        for n in names {
-            let n_clone = n.clone();
-            let loc: WebGlUniformLocation = self
-                .program_data
-                .program
-                .as_ref()
-                .get_uniform_location(&self.program_data.program, &n_clone)
-                .expect("Expected uniform location.");
-            self.program_data.uniforms.insert(n_clone, loc);
-        }
-        self
-    }
-    */
 }
 
 pub struct Renderer<'a> {
     pub ctx: &'a Gl,
 }
 
+enum Errors {
+    FailedToGetUniformLoc { info: String },
+}
+
 impl<'a> Renderer<'a> {
-    
     pub fn debug(&self) {
         self.ctx.buffer_data_with_opt_array_buffer(
             Gl::ARRAY_BUFFER,
             Some(&VertArray::from(vec![0., 0., 1000., 1000.].as_ref()).buffer()),
             Gl::STATIC_DRAW,
         );
-        self.ctx.draw_arrays(
-            Gl::LINES,
-            0,
-            4 / 2,
-        );
+        self.ctx.draw_arrays(Gl::LINES, 0, 4 / 2);
     }
 
-    pub fn make_program_data<T>(&self, program: Rc::<WebGlProgram>, uniform_names: T) -> ProgramData
-        where T: IntoIterator, T::Item: ToString, T::Item: Eq, T::Item: std::hash::Hash
+    pub fn make_program_data<T>(&self, program: Rc<WebGlProgram>, uniform_names: T) -> ProgramData
+    where
+        T: IntoIterator,
+        T::Item: ToString,
+        T::Item: Eq,
+        T::Item: std::hash::Hash,
     {
         let mut m: HashMap<String, _> = HashMap::new();
         for n in uniform_names {
             let n_string = n.to_string();
-            let loc = Rc::new(self.ctx.get_uniform_location(program.as_ref(), &n_string).expect("Expecting to find uniform."));
+            let loc = Rc::new(
+                self.ctx
+                    .get_uniform_location(program.as_ref(), &n_string)
+                    .expect("Expecting to find uniform."),
+            );
             m.insert(n_string, loc);
         }
         ProgramData {
@@ -137,48 +135,16 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    fn draw_item(&self, item_tup: &(DrawnStatus, Rc<RenderItem>)) {
+    fn draw_item(&self, item_tup: &(DrawnStatus, Rc<RenderItem>)) -> Result<(), Errors> {
         let (drawn_status, item) = item_tup;
+        let borrowed_tf = item.transform.borrow();
         match drawn_status {
             DrawnStatus::NeedsDraw => {
-                self.apply_tf(item, &item.transform);
+                self.apply_tf(item, &borrowed_tf)?;
                 self.first_time_draw_setup(item);
-                console::log_1(&"Drawn".into());
             }
             DrawnStatus::Drawn => {
-                self.apply_tf(item, &item.transform);
-            }
-        }
-        self.ctx.draw_arrays(
-            Gl::LINES,
-            0,
-            (4 / item.vert_stride) as i32,
-        );
-    }
-
-    fn first_time_draw_setup(&self, item: &RenderItem) {
-        self.ctx.buffer_data_with_opt_array_buffer(
-            Gl::ARRAY_BUFFER,
-            Some(&VertArray::from(vec![0., 0., 1000., 1000.].as_ref()).buffer()),
-            //Some(&item.verts.buffer()),
-            Gl::STATIC_DRAW,
-        );
-    }
-
-    fn apply_tf(&self, item: &RenderItem, tf: &Transform) {
-        let fake_tf_vec = vec![1., 0., 0., 0., 1., 0., 50., 50., 1.];
-        match item.program_data().uniforms.get("u_transformationMatrix") {
-            Some(loc) => {
-                self.ctx.uniform_matrix3fv_with_f32_array(
-                    Some(&*loc),
-                    false,
-                    //&tf.to_f32_vec(),
-                    &fake_tf_vec,
-                );
-            }
-            None => {
-                console::log_1(&"Yo wtf".into());
-                panic!()
+                self.apply_tf(item, &borrowed_tf)?;
             }
         }
         self.ctx.draw_arrays(
@@ -186,5 +152,35 @@ impl<'a> Renderer<'a> {
             0,
             (item.verts.length() / item.vert_stride) as i32,
         );
+        Ok(())
+    }
+
+    fn first_time_draw_setup(&self, item: &RenderItem) {
+        self.ctx.buffer_data_with_opt_array_buffer(
+            Gl::ARRAY_BUFFER,
+            Some(&item.verts.buffer()),
+            Gl::STATIC_DRAW,
+        );
+    }
+
+    fn apply_tf(&self, item: &RenderItem, tf: &Transform) -> Result<(), Errors> {
+        let u_name = "u_transformationMatrix";
+        match item.program_data().uniforms.get(u_name) {
+            Some(loc_rc) => {
+                let loc: Option<&GlULoc> = Some(&*loc_rc);
+                let values = tf.to_mat3_vec();
+                self.ctx
+                    .uniform_matrix3fv_with_f32_array(loc, false, &values);
+                self.ctx.draw_arrays(
+                    Gl::LINES,
+                    0,
+                    (item.verts.length() / item.vert_stride) as i32,
+                );
+                Ok(())
+            }
+            None => Err(Errors::FailedToGetUniformLoc {
+                info: u_name.into(),
+            }),
+        }
     }
 }

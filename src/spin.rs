@@ -1,22 +1,23 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use web_sys::{WebGl2RenderingContext as Gl, WebGlProgram, WebGlUniformLocation};
 
-use crate::js_bindings::InputBinding;
-use crate::rendering::{RenderItem, RenderableQueues, Renderer, ProgramData};
-use crate::transform::Transform;
+use na::Vector3;
+
 use crate::geometry;
+use crate::js_bindings::InputBinding;
+use crate::rendering::{ProgramData, RenderItem, RenderableQueues, Renderer};
+use crate::transform::Transform;
 
 type CallbackBox = Rc<dyn Fn(&mut WorldState)>;
-
-pub trait Callback: FnOnce(&mut WorldState) {}
 
 pub struct WorldState {
     pub frame_idx: u64,
     pub inputs: Option<InputBinding>,
     pub renderables: RenderableQueues,
-    pub transforms: Vec<Rc<Transform>>,
+    pub transforms: Vec<Rc<RefCell<Transform>>>,
     new_step_logic_cbs: Vec<CallbackBox>,
 }
 
@@ -69,7 +70,7 @@ impl<'a> GameLoop<'a> {
 
     pub fn setup(&mut self, program: Rc<WebGlProgram>, location_names: &[String]) {
         let program_data = self.renderer.make_program_data(program, location_names);
-        let cb: Rc<dyn Fn(&mut WorldState)> = Rc::new(move |state| {
+        let cb: CallbackBox = Rc::new(move |state| {
             square_follower(state, program_data.clone());
         });
         self.register_step_logic_fn(cb);
@@ -93,9 +94,20 @@ impl<'a> GameLoop<'a> {
 }
 
 fn square_follower(state: &mut WorldState, program_data: ProgramData) {
-    let transform = Rc::new(Transform::identity());
+    let inputs = state.inputs.as_ref().unwrap();
+    let x = inputs.get_mouse_x();
+    let y = inputs.get_mouse_y();
+    let transform = Rc::new(RefCell::new(Transform::new(
+        Vector3::new(x as f32, y as f32, 0.),
+        Vector3::new(0., 0., 0.),
+        Vector3::new(2., 1., 1.),
+    )));
     state.transforms.push(transform.clone());
-    state.renderables.push_forward_queue(Rc::new(
-        RenderItem::new(program_data, transform, &geometry::new_square(1.)),
-    ));
+    state
+        .renderables
+        .push_forward_queue(Rc::new(RenderItem::new(
+            program_data,
+            transform,
+            &geometry::new_square(10.),
+        )));
 }

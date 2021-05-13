@@ -1,5 +1,5 @@
 import {bind_game, get_transform_mat} from "wasm-canvas-js";
-import {InputBindings, getMousePos} from "./get_mouse";
+import {InputBindings, setMousePos} from "./get_mouse";
 
 /**
  *
@@ -48,7 +48,7 @@ function createProgram(gl, vertexShader, fragmentShader) {
 
 function bindInputs(canvas, bindObject) {
     canvas.addEventListener('mousemove', (evt) => {
-        bindObject.mousePos = getMousePos(canvas, evt);
+        setMousePos(bindObject, canvas, evt);
     });
 }
 
@@ -129,13 +129,14 @@ export function webglMain(canvas, fragShaderSrc, vertShaderSrc) {
     //bind_game(gl, transformationMatrixULoc);
 
     const drawScene = () => {
+        /*
         const transformMat = get_transform_mat(
             0, 0
             //inputBinding.mouseX/1.0,
             //-inputBinding.mouseY/1.0 + canvas.height,
         );
         gl.uniformMatrix3fv(transformationMatrixULoc, false, transformMat);
-
+        */
         //gl.drawArrays(primitiveType, arrayOffset, vertCount);
         bind_game(gl, prgm, inputBinding, ["u_transformationMatrix"], canvas);
         setTimeout(drawScene, 1000/60);

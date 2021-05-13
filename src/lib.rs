@@ -33,7 +33,7 @@ pub fn bind_game(
 
     let u_location_names: Vec<String> = serde_wasm_bindgen::from_value(u_location_names)
         .expect("Location names should be strings.");
-    
+
     let mut game_loop: spin::GameLoop = spin::GameLoop::empty(context);
     game_loop.setup(std::rc::Rc::new(program), &u_location_names);
     game_loop.bind_canvas(Some(&canvas_elem));
