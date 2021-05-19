@@ -1,5 +1,3 @@
-use nalgebra as na;
-
 pub type VertArray = js_sys::Float32Array;
 
 pub fn new_square(scale: f32) -> Vec<f32> {

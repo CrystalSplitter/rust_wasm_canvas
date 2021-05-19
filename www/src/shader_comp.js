@@ -128,18 +128,17 @@ export function webglMain(canvas, fragShaderSrc, vertShaderSrc) {
 
     //bind_game(gl, transformationMatrixULoc);
 
-    const drawScene = () => {
-        /*
-        const transformMat = get_transform_mat(
-            0, 0
+    bind_game(gl, prgm, ["u_transformationMatrix"], canvas);
+
+    //const drawScene = () => {
+        //const transformMat = get_transform_mat(
+        //    0, 0
             //inputBinding.mouseX/1.0,
             //-inputBinding.mouseY/1.0 + canvas.height,
-        );
-        gl.uniformMatrix3fv(transformationMatrixULoc, false, transformMat);
-        */
+        //);
+        //gl.uniformMatrix3fv(transformationMatrixULoc, false, transformMat);
         //gl.drawArrays(primitiveType, arrayOffset, vertCount);
-        bind_game(gl, prgm, inputBinding, ["u_transformationMatrix"], canvas);
-        setTimeout(drawScene, 1000/60);
-    }
-    drawScene();
+        //setTimeout(drawScene, 1000/60);
+    //}
+    //drawScene();
 }

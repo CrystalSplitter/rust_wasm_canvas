@@ -20,5 +20,5 @@ export function  setMousePos(obj, canvas, evt) {
       scaleY = canvas.height / rect.height;  // relationship bitmap vs. element for Y
 
   obj.mouseX = (evt.clientX - rect.left) * scaleX;
-  obj.mouseY = (-evt.clientY) * scaleY + canvas.height;
+  obj.mouseY = (evt.clientY - rect.top) * scaleY;
 }

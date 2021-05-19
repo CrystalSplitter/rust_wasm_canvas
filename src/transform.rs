@@ -16,6 +16,21 @@ impl Transform {
         }
     }
 
+    pub fn set_position(&mut self, position: Vector3<f32>) -> &mut Self {
+        self.translation = position;
+        self
+    }
+
+    pub fn set_rotation(&mut self, rot: Vector3<f32>) -> &mut Self {
+        self.rotation = rot;
+        self
+    }
+
+    pub fn set_scale(&mut self, scale: Vector3<f32>) -> &mut Self {
+        self.scale = scale;
+        self
+    }
+
     pub fn new(translation: Vector3<f32>, rotation: Vector3<f32>, scale: Vector3<f32>) -> Self {
         Transform {
             translation,
