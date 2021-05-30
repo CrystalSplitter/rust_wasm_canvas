@@ -14,7 +14,6 @@ canvas {
     @include firefox-only {
         image-rendering: crisp-edges;
     }
-    width: 2048px;
-    height: 1536px;
+    width: 1080px; /*256px; 1024px; 2048px;*/
+    height: 1080px; /*192px; 768px; 1536px;*/
 }
-

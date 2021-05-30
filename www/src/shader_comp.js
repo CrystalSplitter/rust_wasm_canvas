@@ -46,22 +46,16 @@ function createProgram(gl, vertexShader, fragmentShader) {
     }
 }
 
-function bindInputs(canvas, bindObject) {
-    canvas.addEventListener('mousemove', (evt) => {
-        setMousePos(bindObject, canvas, evt);
-    });
-}
-
 export function webglMain(canvas, fragShaderSrc, vertShaderSrc) {
     const gl = canvas.getContext("webgl2", {antialias: false});
-    const inputBinding = new InputBindings(0.0, 0.0);
-    bindInputs(canvas, inputBinding);
+    /*
     // ================================================================
     // -- Set up buffers --
     // ================================================================
     // Bind the position buffer to the webgl ARRAY_BUFFER.
     const positionBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    */
 
     // ================================================================
     // -- Program Creation --
@@ -72,6 +66,7 @@ export function webglMain(canvas, fragShaderSrc, vertShaderSrc) {
     const prgm = createProgram(gl, vertShader, fragShader);
     gl.useProgram(prgm);
 
+    /*
     // ================================================================
     // -- VAO --
     // ================================================================
@@ -84,12 +79,13 @@ export function webglMain(canvas, fragShaderSrc, vertShaderSrc) {
     gl.enableVertexAttribArray(positionAttributeLocation);
 
     // Note that because the shader takes in a vec4, this will only set the x and y positions of the shader.
-    const iterationSize = 2;
+    const iterationSize = 3;
     const dataType = gl.FLOAT;
     const normalize = false;
     const stride = 0; // 0 means move forward based on the iteration Size.
     const offset = 0; // Start at the beginning of the buffer.
     gl.vertexAttribPointer(positionAttributeLocation, iterationSize, dataType, normalize, stride, offset);
+    */
 
     // ================================================================
     // -- Canvas Set up --
@@ -99,9 +95,9 @@ export function webglMain(canvas, fragShaderSrc, vertShaderSrc) {
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
 
     // Set the clear color.
-    gl.clearColor(0, 0, 0, 0);
+    gl.clearColor(0.8, 0.8, 1.0, 1.0);
     // Clear the color buffer.
-    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     // ================================================================
     // -- Program variable set ups --
@@ -112,22 +108,10 @@ export function webglMain(canvas, fragShaderSrc, vertShaderSrc) {
     let colorULoc = gl.getUniformLocation(prgm, "u_color");
     gl.uniform4f(colorULoc, 1.0, 0, 0, 1.0);
 
-    let transformationMatrixULoc = gl.getUniformLocation(prgm, "u_transformationMatrix");
 
     // ================================================================
     // --  Draw using the program --
     // ================================================================
-    //setUpGeometry(gl, 0, 0);
-
-    const primitiveType = gl.TRIANGLES;
-    const arrayOffset = 0;
-    const vertCount = 3;
-
-    let lastDeltaX = 0;
-    let lastDeltaY = 0;
-
-    //bind_game(gl, transformationMatrixULoc);
-
     bind_game(gl, prgm, ["u_transformationMatrix"], canvas);
 
     //const drawScene = () => {

@@ -39,6 +39,7 @@ where
     Ok(())
 }
 
+/// Get the mouse position from a given MouseEvent.
 pub fn get_mouse_pos(canvas: &HtmlCanvasElement, evt: &MouseEvent) -> Result<InputBinding, String> {
     let rect = canvas.get_bounding_client_rect();
     let scale_x: f32 = canvas.width() as f32 / rect.width() as f32;

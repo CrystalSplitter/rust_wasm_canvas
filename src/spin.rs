@@ -9,16 +9,16 @@ use web_sys::{console, HtmlCanvasElement, WebGl2RenderingContext as Gl, WebGlPro
 use crate::geometry;
 use crate::inputs;
 use crate::inputs::{Input, InputBinding};
-use crate::rendering::{RenderItem, RenderableQueues, Renderer};
+use crate::maths_utils::*;
+use crate::rendering::*;
 use crate::transform::Transform;
-//use crate::js_bindings::InputBinding;
 
 pub enum RendQueueType {
     Fwd,
     Rev,
 }
 
-type CallbackBox<State> = Rc<dyn Fn(&mut State)>;
+type CallbackBox<State> = Rc<dyn Fn(&mut State) -> Result<(), String>>;
 type InputT = InputBinding;
 
 pub struct WorldState {
@@ -94,25 +94,33 @@ impl WorldState {
 }
 
 pub struct GameLoop {
-    renderer: Renderer,
     state: Arc<Mutex<WorldState>>,
     step_logic_cbs: Vec<CallbackBox<WorldState>>,
-    canvas_elem: Option<Arc<HtmlCanvasElement>>,
+    renderer: Option<Box<dyn Renderer>>,
+    canvas: Option<Arc<HtmlCanvasElement>>,
 }
 
 impl GameLoop {
-    pub fn empty(ctx: Gl) -> Self {
+    pub fn empty() -> Self {
         Self {
-            renderer: Renderer { ctx },
+            renderer: None,
             state: Arc::new(Mutex::new(WorldState::empty())),
             step_logic_cbs: Vec::new(),
-            canvas_elem: None,
+            canvas: None,
         }
     }
 
     /// Set the canvas object to render to.
-    pub fn bind_canvas(&mut self, canvas_elem: HtmlCanvasElement) {
-        self.canvas_elem = Some(Arc::new(canvas_elem));
+    pub fn bind_canvas(&mut self, canvas: HtmlCanvasElement, ctx: Gl) {
+        let ratio = aspect_ratio(&canvas);
+        let viewport_size = 1000.;
+        self.renderer = Some(Box::new(RendererOrtho3D::new(
+            ctx,
+            viewport_size * ratio,
+            viewport_size / ratio,
+            400.,
+        )));
+        self.canvas = Some(Arc::new(canvas));
     }
 
     pub fn register_step_logic_fn(&mut self, f: CallbackBox<WorldState>) {
@@ -133,7 +141,7 @@ impl GameLoop {
         program: Rc<WebGlProgram>,
         location_names: &[String],
     ) -> Result<(), String> {
-        match &self.canvas_elem {
+        match &self.canvas {
             Some(canv_arc) => {
                 GameLoop::setup_input_binding(self.state.clone(), canv_arc.clone())?;
             }
@@ -142,26 +150,43 @@ impl GameLoop {
             }
         }
 
-        let program_data = self.renderer.make_program_data(program, location_names);
-        let transform = Rc::new(RefCell::new(Transform::identity()));
-        {
+        let transform: Rc<_> = self.new_object();
+        if let Some(renderer_ref) = self.renderer.as_ref() {
+            let ctx: &_ = renderer_ref.get_ctx();
+            let pd = make_program_data(
+                ctx,
+                program,
+                location_names,
+                &["a_color".into(), "a_position".into()],
+            );
+            let buffer_info = BufferInfo::new(ctx.clone())
+                .add_buffer("a_position".into(), Box::new(geometry::new_cube(50.0)), BufferSettings::new(3, Gl::FLOAT))
+                .add_buffer("a_color".into(), Box::new(get_color()), BufferSettings::new(3, Gl::UNSIGNED_BYTE).normalize());
+            let vao = ctx.create_vertex_array();
             let mut state_mg = self.state.lock().unwrap();
-            state_mg.add_transform(transform.clone());
             state_mg.push_rendqueue(
                 RendQueueType::Fwd,
-                Rc::new(RenderItem::new(
-                    program_data,
+                Rc::new(RenderItem::new_3d(
+                    pd,
                     transform.clone(),
-                    &geometry::new_square(10.),
+                    buffer_info,
+                    vao.unwrap(),
                 )),
             );
-            // Unlock state.
         }
-        let cb: CallbackBox<WorldState> = Rc::new(move |state| {
-            square_follower(&state, transform.clone());
+            let cb: CallbackBox<WorldState> = Rc::new(move |state| {
+            mouse_follower(&state, transform.clone());
+            Ok(())
         });
         self.register_step_logic_fn(cb);
         Ok(())
+    }
+
+    fn new_object(&mut self) -> Rc<RefCell<Transform>> {
+        let transform = Rc::new(RefCell::new(Transform::identity()));
+        let mut state_mg = self.state.lock().unwrap();
+        state_mg.add_transform(transform.clone());
+        transform
     }
 
     fn setup_input_binding(
@@ -170,7 +195,7 @@ impl GameLoop {
     ) -> Result<(), String> {
         // Need a copy here because the listener needs its own ref.
         let bind_to_clone = bind_to.clone();
-        let success = inputs::add_listener(
+        let r = inputs::add_listener(
             bind_to.as_ref(),
             "mousemove",
             Box::new(move |evt: web_sys::Event| {
@@ -186,32 +211,91 @@ impl GameLoop {
                 }
             }),
         );
-        success.map_err(|_| "Failed to add listener to canvas".into())
+        r.map_err(|_| "Failed to add listener to canvas".into())
     }
 
     pub fn start(&mut self) {}
 
-    pub fn step(&mut self) {
+    pub fn step(&mut self) -> Result<(), String> {
         self.update_step_logic_cbs();
         let mut state_mg = self.state.lock().unwrap();
         for f in self.step_logic_cbs.iter_mut() {
-            f(&mut *state_mg);
+            f(&mut *state_mg)?;
         }
-        self.renderer.render_all(state_mg.get_rendqueue_mut());
+        if let Some(r) = &self.renderer {
+            r.render_all(state_mg.get_rendqueue_mut())
+        }
         state_mg.inc_frame_count();
+        Ok(())
     }
 }
 
-fn square_follower(state: &WorldState, tf: Rc<RefCell<Transform>>) {
+fn mouse_follower(state: &WorldState, tf: Rc<RefCell<Transform>>) {
     let mut tf = tf.borrow_mut();
     match state.get_inputs() {
         Some(inputs) => {
-            let x = inputs.get_mouse_x();
-            let y = inputs.get_mouse_y();
-            tf.set_position(Vector3::new(x, 192.0 - y, 0.));
+            let cur_pos = tf.get_position();
+            let x = inputs.get_mouse_x() * 1000. / 512.;
+            let y = inputs.get_mouse_y() * 1000. / 512.;
+            tf.set_position(Vector3::new(
+                lerp(cur_pos[0], x, 0.5),
+                lerp(cur_pos[1], y, 0.5),
+                0.,
+            ));
+            tf.set_euler_rotation(EulerAngles3D::from_deg(y / 2., x / 2., y / 4.));
         }
         _ => {
             tf.set_position(Vector3::new(0., 0., 0.));
+            tf.set_euler_rotation(EulerAngles3D::from_rad(0., 0., 0.));
         }
     }
+}
+
+fn aspect_ratio(canvas: &HtmlCanvasElement) -> f32 {
+    canvas.client_width() as f32 / canvas.client_height() as f32
+}
+
+fn get_color() -> Vec<u8> {
+    let v: Vec<u8> = vec![
+        // left column front
+        200, 70, 120, 200, 70, 120, 200, 70, 120, 200, 70, 120, 200, 70, 120, 200, 70, 120,
+        // top rung front
+        200, 70, 120, 200, 70, 120, 200, 70, 120, 200, 70, 120, 200, 70, 120, 200, 70, 120,
+        // middle rung front
+        200, 70, 120, 200, 70, 120, 200, 70, 120, 200, 70, 120, 200, 70, 120, 200, 70, 120,
+        // left column back
+        80, 70, 200, 80, 70, 200, 80, 70, 200, 80, 70, 200, 80, 70, 200, 80, 70, 200,
+        // top rung back
+        80, 70, 200, 80, 70, 200, 80, 70, 200, 80, 70, 200, 80, 70, 200, 80, 70, 200,
+        // middle rung back
+        80, 70, 200, 80, 70, 200, 80, 70, 200, 80, 70, 200, 80, 70, 200, 80, 70, 200,
+        // top
+        70, 200, 210, 70, 200, 210, 70, 200, 210, 70, 200, 210, 70, 200, 210, 70, 200, 210,
+        // top rung right
+        200, 200, 70, 200, 200, 70, 200, 200, 70, 200, 200, 70, 200, 200, 70, 200, 200, 70,
+        // under top rung
+        210, 100, 70, 210, 100, 70, 210, 100, 70, 210, 100, 70, 210, 100, 70, 210, 100, 70,
+        // between top rung and middle
+        210, 160, 70, 210, 160, 70, 210, 160, 70, 210, 160, 70, 210, 160, 70, 210, 160, 70,
+        // top of middle rung
+        70, 180, 210, 70, 180, 210, 70, 180, 210, 70, 180, 210, 70, 180, 210, 70, 180, 210,
+        // right of middle rung
+        100, 70, 210, 100, 70, 210, 100, 70, 210, 100, 70, 210, 100, 70, 210, 100, 70, 210,
+        // bottom of middle rung.
+        76, 210, 100, 76, 210, 100, 76, 210, 100, 76, 210, 100, 76, 210, 100, 76, 210, 100,
+        // right of bottom
+        140, 210, 80, 140, 210, 80, 140, 210, 80, 140, 210, 80, 140, 210, 80, 140, 210, 80,
+        // bottom
+        90, 130, 110, 90, 130, 110, 90, 130, 110, 90, 130, 110, 90, 130, 110, 90, 130, 110,
+        // left side
+        160, 160, 220, 160, 160, 220, 160, 160, 220, 160, 160, 220, 160, 160, 220, 160, 160, 220,
+    ];
+    v
+    /*
+    gl.buffer_data_with_opt_array_buffer(
+        Gl::ARRAY_BUFFER,
+        Some(js_sys::Uint8Array::from(v.as_ref()).buffer().as_ref()),
+        Gl::STATIC_DRAW,
+    );
+    */
 }
