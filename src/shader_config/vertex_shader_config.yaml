@@ -1,0 +1,21 @@
+shaders:
+  - name: "vertex_shader"
+    buffers:
+      - name: "a_position"
+        buffer_data:
+          file: "~/Desktop/cube.obj"
+        buffer_settings:
+          dim: 3
+          data_type: "FLOAT"
+          stride: 0,
+          offset: 0,
+          normalize: false
+      - name: "a_color"
+        buffer_data:
+          constant: [0, 0, 0, 0]
+        buffer_settings:
+          dim: 3
+          data_type: "FLOAT"
+          stride: 0,
+          offset: 0,
+          normalize: true
