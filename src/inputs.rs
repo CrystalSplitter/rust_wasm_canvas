@@ -5,11 +5,24 @@ use web_sys::{HtmlCanvasElement, HtmlElement, MouseEvent};
 pub trait Input {
     fn get_mouse_x(&self) -> f32;
     fn get_mouse_y(&self) -> f32;
+
+    /// Viewport X position, generally ranging from -1 to 1 (with 0
+    /// being the centre). Can exceed these bounds if the mouse
+    /// lies outside the canvas bounds.
+    fn get_mouse_view_x(&self) -> f32;
+
+    /// Viewport Y position, generally ranging from -1 to 1 (with 0
+    /// being the centre). Can exceed these bounds if the mouse
+    /// lies outside the canvas bounds.
+    fn get_mouse_view_y(&self) -> f32;
 }
 
+#[derive(Debug, Clone)]
 pub struct InputBinding {
     pub mouse_x: f32,
     pub mouse_y: f32,
+    pub canvas_width: u32,
+    pub canvas_height: u32,
 }
 
 impl Input for InputBinding {
@@ -19,6 +32,16 @@ impl Input for InputBinding {
 
     fn get_mouse_y(&self) -> f32 {
         self.mouse_y as f32
+    }
+
+    fn get_mouse_view_x(&self) -> f32 {
+        let canvas_width = self.canvas_width as f32;
+        self.mouse_x / canvas_width - 0.5 * canvas_width
+    }
+
+    fn get_mouse_view_y(&self) -> f32 {
+        let canvas_height = self.canvas_height as f32;
+        self.mouse_y / canvas_height - 0.5 * canvas_height
     }
 }
 
@@ -47,5 +70,7 @@ pub fn get_mouse_pos(canvas: &HtmlCanvasElement, evt: &MouseEvent) -> Result<Inp
     Ok(InputBinding {
         mouse_x: ((evt.client_x() as f32 - rect.left() as f32) * scale_x),
         mouse_y: ((evt.client_y() as f32 - rect.top() as f32) * scale_y),
+        canvas_width: canvas.width(),
+        canvas_height: canvas.height(),
     })
 }

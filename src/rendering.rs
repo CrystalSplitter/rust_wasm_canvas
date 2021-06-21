@@ -1,5 +1,7 @@
+use na::Vector3;
+
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::rc::Rc;
 
@@ -45,10 +47,9 @@ pub struct GlAttrLoc(i32);
 
 #[derive(Debug, Clone)]
 pub struct ProgramData {
-    program: Rc<WebGlProgram>,
-    uniforms: HashMap<String, GlULoc>,
-    attributes: HashMap<String, GlAttrLoc>,
-    vaos: HashMap<String, GlVao>,
+    uniforms: BTreeMap<String, GlULoc>,
+    attributes: BTreeMap<String, GlAttrLoc>,
+    vaos: BTreeMap<String, GlVao>,
 }
 
 pub trait Bufferable: std::fmt::Debug {
@@ -81,8 +82,8 @@ pub struct BufferSettings {
     pub dim: u8,
     pub data_type: u32,
     pub normalize: bool,
-    stride: i32,
-    offset: i32,
+    pub stride: i32,
+    pub offset: i32,
 }
 
 impl BufferSettings {
@@ -109,18 +110,17 @@ pub struct BufferDataBind {
     data: Box<dyn Bufferable>,
 }
 
-
 #[derive(Debug)]
 pub struct BufferInfo {
     ctx: Gl,
-    buffers: HashMap<String, BufferDataBind>,
+    buffers: BTreeMap<String, BufferDataBind>,
 }
 
 impl BufferInfo {
     pub fn new(ctx: Gl) -> Self {
         BufferInfo {
             ctx,
-            buffers: HashMap::new(),
+            buffers: BTreeMap::new(),
         }
     }
 
@@ -154,7 +154,7 @@ impl BufferInfo {
         ctx: Gl,
         buffer_mappings: Vec<(String, Box<dyn Bufferable>, BufferSettings)>,
     ) -> BufferInfo {
-        let mut buffers = HashMap::with_capacity(buffer_mappings.len());
+        let mut buffers = BTreeMap::new();
         for (key, data, settings) in buffer_mappings {
             let webgl_buffer = ctx
                 .create_buffer()
@@ -186,8 +186,36 @@ impl BufferInfo {
         }
     }
 
-    pub fn get_buffers(&self) -> &HashMap<String, BufferDataBind> {
+    pub fn get_buffers(&self) -> &BTreeMap<String, BufferDataBind> {
         &self.buffers
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct Assigned;
+#[derive(Debug, Default)]
+pub struct ToAssign;
+
+pub struct RenderItemBuilder<'a, BUFFER_INFO> {
+    pub program_ref: &'a WebGlProgram,
+    pub buffer_info: Option<BufferInfo>,
+    pub transform: Option<Rc<RefCell<Transform>>>,
+    pub draw_type: u32,
+}
+
+impl<'a> RenderItemBuilder<'a> {
+    pub const fn new(program_ref: &'a WebGlProgram) -> Self {
+        Self {
+            program_ref,
+            buffer_info: None,
+            transform: None,
+            draw_type: Gl::FLOAT,
+        }
+    }
+
+    pub const fn buffer_info(mut self, bi: BufferInfo) -> Self {
+        self.buffer_info = Some(bi);
+        self
     }
 }
 
@@ -196,10 +224,10 @@ pub struct RenderItem {
     program_data: ProgramData,
     buffer_info: BufferInfo,
     enabled: bool,
-    //verts: VertArray,
-    vert_stride: u32,
+    _dim: u32,
     transform: Rc<RefCell<Transform>>,
     vao: GlVao,
+    draw_type: u32,
 }
 
 impl RenderItem {
@@ -213,9 +241,10 @@ impl RenderItem {
             program_data,
             enabled: true,
             buffer_info,
-            vert_stride: 2,
+            _dim: 2,
             transform,
             vao,
+            draw_type: Gl::TRIANGLES,
         }
     }
 
@@ -229,9 +258,10 @@ impl RenderItem {
             program_data,
             enabled: true,
             buffer_info,
-            vert_stride: 3,
+            _dim: 3,
             transform,
             vao,
+            draw_type: Gl::LINES,
         }
     }
 
@@ -241,6 +271,11 @@ impl RenderItem {
 
     pub fn enable(&mut self) {
         self.enabled = true;
+    }
+
+    pub fn set_draw_type(&mut self, draw_type: u32) -> &mut Self {
+        self.draw_type = draw_type;
+        self
     }
 
     pub fn program_data(&self) -> &ProgramData {
@@ -287,6 +322,7 @@ impl RenderItem {
     }
 }
 
+/// Create new program data from a passed in context.
 pub fn make_program_data<T>(
     ctx: &Gl,
     program: Rc<WebGlProgram>,
@@ -299,7 +335,7 @@ where
     T::Item: Eq,
     T::Item: std::hash::Hash,
 {
-    let mut u: HashMap<String, _> = HashMap::new();
+    let mut u: BTreeMap<String, _> = Default::default();
     for n in uniform_names {
         let n_string = n.to_string();
         let loc = ctx
@@ -307,15 +343,14 @@ where
             .expect("Expecting to find uniform.");
         u.insert(n_string, loc);
     }
-    let mut a: HashMap<String, _> = HashMap::new();
+    let mut a: BTreeMap<String, _> = Default::default();
     for n in attrib_names {
         let n_string = n.to_string();
         let loc = ctx.get_attrib_location(program.as_ref(), &n_string);
         a.insert(n_string, GlAttrLoc(loc));
     }
-    let v: HashMap<String, _> = HashMap::new();
+    let v: BTreeMap<String, _> = Default::default();
     ProgramData {
-        program,
         uniforms: u,
         attributes: a,
         vaos: v,
@@ -331,24 +366,29 @@ pub trait Renderer {
     fn first_time_draw_setup(&self, item: &RenderItem) -> Result<(), String> {
         item.write_buffer_data(self.get_ctx())
     }
-}
 
-pub trait Renderer3D {}
+    fn set_camera_tf(&mut self, camera_tf: Rc<RefCell<Transform>>);
+    fn get_camera_tf(&self) -> Rc<RefCell<Transform>>;
+}
 
 #[derive(Debug)]
 enum RenderError {
     FailedToGetUniformLoc { info: String },
     NoBufferSize { info: String },
+    FailedDraw { info: String },
 }
 
 #[derive(Debug, Clone)]
 pub struct RendererOrtho3D {
-    ctx: Gl,
+    ctx: Rc<Gl>,
+    view_height: f32,
+    view_width: f32,
     projection_mat: na::Matrix4<f32>,
+    camera_tf: Rc<RefCell<Transform>>,
 }
 
 impl RendererOrtho3D {
-    pub fn new(ctx: Gl, view_width: f32, view_height: f32, clip_depth: f32) -> Self {
+    pub fn new(ctx: Rc<Gl>, view_width: f32, view_height: f32, clip_depth: f32) -> Self {
         ctx.enable(Gl::CULL_FACE); // Cull back faces
         ctx.enable(Gl::DEPTH_TEST); // Use depth to determine polygon draw ordering.
 
@@ -360,10 +400,17 @@ impl RendererOrtho3D {
                 na::Vector4::new(0., 0., 2. / clip_depth, 0.),
                 na::Vector4::new(-1., 1., 0., 1.),
             ]),
+            camera_tf: Rc::new(RefCell::new(Transform::identity())),
+            view_height,
+            view_width,
         }
     }
 
-    fn draw_item(&self, item_tup: &(DrawnStatus, Rc<RenderItem>)) -> Result<(), RenderError> {
+    fn draw_item(
+        &self,
+        item_tup: &(DrawnStatus, Rc<RenderItem>),
+        camera_tf: &Transform,
+    ) -> Result<(), RenderError> {
         let (drawn_status, item) = item_tup;
         let borrowed_tf = item.transform.borrow();
         match drawn_status {
@@ -371,11 +418,12 @@ impl RendererOrtho3D {
                 // Need to do a first time draw,
                 // otherwise the transform won't
                 // do anything.
-                self.first_time_draw_setup(item);
-                self.apply_tf(item, &borrowed_tf)?;
+                self.first_time_draw_setup(item)
+                    .map_err(|e| RenderError::FailedDraw { info: e })?;
+                self.apply_tf(item, &borrowed_tf, &camera_tf)?;
             }
             DrawnStatus::Drawn => {
-                self.apply_tf(item, &borrowed_tf)?;
+                self.apply_tf(item, &borrowed_tf, &camera_tf)?;
             }
         }
         let components: i32 = item
@@ -385,17 +433,29 @@ impl RendererOrtho3D {
             })?
             .try_into()
             .unwrap();
-        self.ctx.draw_arrays(Gl::TRIANGLES, 0, components);
+        self.ctx.draw_arrays(item.draw_type, 0, components);
         Ok(())
     }
 
-    fn apply_tf(&self, item: &RenderItem, tf: &Transform) -> Result<(), RenderError> {
+    fn apply_tf(
+        &self,
+        item: &RenderItem,
+        tf: &Transform,
+        camera_tf: &Transform,
+    ) -> Result<(), RenderError> {
         const U_NAME: &str = "u_transformationMatrix";
         match item.program_data().uniforms.get(U_NAME) {
             Some(loc_rc) => {
                 let loc: Option<&GlULoc> = Some(&*loc_rc);
                 let proj_matrix: &na::Matrix4<f32> = &self.projection_mat;
-                let values = proj_matrix * tf.to_mat4();
+                let shift_vec = Vector3::new(self.view_width * 0.5, self.view_height * 0.5, 0.0);
+                let values = (proj_matrix
+                    * camera_tf
+                        .to_mat4()
+                        .try_inverse()
+                        .expect("Unreachable")
+                        .append_translation(&shift_vec))
+                    * tf.to_mat4();
                 let val_ref: Vec<f32> = values.iter().copied().collect();
                 self.ctx
                     .uniform_matrix4fv_with_f32_array(loc, false, &val_ref);
@@ -411,13 +471,14 @@ impl RendererOrtho3D {
 impl Renderer for RendererOrtho3D {
     fn render_all(&self, queues: &mut RenderableQueues) {
         self.ctx.clear(Gl::COLOR_BUFFER_BIT | Gl::DEPTH_BUFFER_BIT);
+        let camera_tf = &self.camera_tf.borrow();
         for item_tup in queues.forward_queue.iter_mut() {
-            if item_tup.1.enabled && self.draw_item(item_tup).is_ok() {
+            if item_tup.1.enabled && self.draw_item(item_tup, &camera_tf).is_ok() {
                 item_tup.0 = DrawnStatus::Drawn;
             }
         }
         for item_tup in queues.reverse_queue.iter_mut().rev() {
-            if item_tup.1.enabled && self.draw_item(item_tup).is_ok() {
+            if item_tup.1.enabled && self.draw_item(item_tup, &camera_tf).is_ok() {
                 item_tup.0 = DrawnStatus::Drawn;
             }
         }
@@ -425,5 +486,13 @@ impl Renderer for RendererOrtho3D {
     /// Return an immutable reference to the interanl context.
     fn get_ctx(&self) -> &Gl {
         &self.ctx
+    }
+
+    fn set_camera_tf(&mut self, camera_tf: Rc<RefCell<Transform>>) {
+        self.camera_tf = camera_tf;
+    }
+
+    fn get_camera_tf(&self) -> Rc<RefCell<Transform>> {
+        self.camera_tf.clone()
     }
 }

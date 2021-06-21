@@ -8,12 +8,24 @@
     }
 }
 
+.centerer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 5%;
+}
 
-canvas {
+#drawscape {
+    // Used for making the canvas render as pixels with no anti-aliasing.
     image-rendering: pixelated;
     @include firefox-only {
         image-rendering: crisp-edges;
     }
-    width: 1080px; /*256px; 1024px; 2048px;*/
-    height: 1080px; /*192px; 768px; 1536px;*/
+
+    // Size of viewport in the browser.
+    width: 1024px;
+    height: 768px;
+    //width: 100%; /*256px; 1024px; 2048px;*/
+    //height: 100%; /*192px; 768px; 1536px;*/
+    //cursor: none;
 }

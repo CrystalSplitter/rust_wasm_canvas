@@ -1,5 +1,5 @@
+use crate::maths_utils::*;
 use na::{Matrix3, Matrix4, Rotation3, Vector2, Vector3, Vector4};
-use crate::maths_utils::{EulerAngles3D};
 
 #[derive(Debug, Clone)]
 pub struct Transform {
@@ -11,8 +11,8 @@ pub struct Transform {
 impl Transform {
     pub fn identity() -> Self {
         Transform {
-            translation: Vector3::new(0., 0., 0.),
-            rotation: Vector3::new(0., 0., 0.),
+            translation: Vector3::zeros(),
+            rotation: Vector3::zeros(),
             scale: Vector3::new(1., 1., 1.),
         }
     }
@@ -29,7 +29,6 @@ impl Transform {
         self.translation = position;
         self
     }
-    
     pub fn get_position(&self) -> Vector3<f32> {
         self.translation
     }
@@ -39,12 +38,19 @@ impl Transform {
         self.rotation = rot;
         self
     }
-    
+
     /// Set rotation in Euler coordinates (pitch, roll, yaw) in radians.
     pub fn set_euler_rotation(&mut self, rot: EulerAngles3D<f32>) -> &mut Self {
-        self.set_euler_rotation_raw(Vector3::new(rot.roll.as_rad(), rot.pitch.as_rad(), rot.yaw.as_rad()))
+        self.set_euler_rotation_raw(Vector3::new(
+            rot.roll.as_rad(),
+            rot.pitch.as_rad(),
+            rot.yaw.as_rad(),
+        ))
     }
-    
+    pub fn get_euler_rotation(&self) -> EulerAngles3D<f32> {
+        EulerAngles3D::from_rad(self.rotation[0], self.rotation[1], self.rotation[2])
+    }
+
     pub fn set_rotation(&mut self, rot: Vector4<f32>) -> &mut Self {
         //self.rotation = rot;
         panic!();
@@ -54,7 +60,6 @@ impl Transform {
         self.scale = scale;
         self
     }
-    
     pub fn get_scale(&self) -> Vector3<f32> {
         self.scale
     }
