@@ -18,10 +18,9 @@ pushd "www" >> /dev/null || exit 1
 npm install
 
 # ...And run the server.
-npm run start > /dev/null &
-server_pid=$!
-
 echo 'Server at: localhost:8080'
+npm run start > /dev/null
+server_pid=$!
 
 kill "${server_pid}"
 

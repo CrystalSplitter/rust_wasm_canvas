@@ -42,8 +42,10 @@ pub fn into_vertex_vec(file_data: &str) -> Result<Vec<f32>, String> {
 }
 
 pub fn mesh_string() -> String {
-    let bytes = include_bytes!("/home/crystal/Desktop/suzanne.obj");
-    String::from_utf8_lossy(bytes).into_owned()
+    // TODO: Should probably put Suzanne into the assets, or somewhere similar.
+    // let bytes = include_bytes!("/home/crystal/Desktop/suzanne.obj");
+    // String::from_utf8_lossy(bytes).into_owned()
+    "".to_owned()
 }
 
 fn get_vertex_pos(obj: &Object, v_id: usize) -> (f64, f64, f64) {

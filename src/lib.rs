@@ -96,7 +96,7 @@ fn bootstrap(
             "a_color".into(),
         ],
     );
-    ergonomic_interval((1.0)game_loop.load_in();
+    game_loop.load_in();
     game_loop.setup()?;
     game_loop.start()?;
     let (closure, handle) = recursive_loop(game_loop)?;
