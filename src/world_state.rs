@@ -7,9 +7,10 @@ use slab::Slab;
 
 use crate::inputs;
 use crate::rendering::*;
+use crate::spin::GameLoop;
 use crate::steppables::Steppable;
-use crate::world_object::{WorldObject3D, WorldObject3DInit, WorldObjectId};
 use crate::util::{Rfc, Wfc};
+use crate::world_object::{WorldObject3D, WorldObject3DInit, WorldObjectId};
 
 pub enum RendQueueType {
     Fwd,
@@ -143,16 +144,18 @@ impl WorldState {
 
     pub fn run_steps(
         self: &mut WorldState,
+        game_loop: &GameLoop,
         steppables: &mut Vec<Rc<RefCell<WorldSteppable>>>,
     ) -> Result<(), String> {
         for s in steppables.iter_mut() {
-            s.borrow_mut().step(self).or_else(|e| e.translate())?;
+            s.borrow_mut().step(self, game_loop).or_else(|e| e.translate())?;
         }
         Ok(())
     }
 
     pub fn run_fixed_steps(
         self: &mut WorldState,
+        game_loop: &GameLoop,
         steppables: &mut Vec<Rc<RefCell<WorldSteppable>>>,
     ) -> Result<(), String> {
         for s in steppables.iter_mut() {
@@ -163,6 +166,7 @@ impl WorldState {
 
     pub fn run_late_steps(
         self: &mut WorldState,
+        game_loop: &GameLoop,
         steppables: &mut Vec<Rc<RefCell<WorldSteppable>>>,
     ) -> Result<(), String> {
         for s in steppables.iter_mut() {

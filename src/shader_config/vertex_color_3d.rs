@@ -1,8 +1,13 @@
 pub mod vertex_color {
+    use crate::rendering::{
+        BufferInfo, BufferSettings, Bufferable, ProgramData, RenderItem, Renderer,
+    };
     use web_sys::WebGl2RenderingContext as Gl;
-    use crate::rendering::{RenderItem, Renderer, BufferInfo, Bufferable, BufferSettings, ProgramData};
-    
+
     /*
+    pub fn add_vertex_color(item: RenderItem, rgba: (u16, u16, u16, u16)) -> RenderItem {
+        RenderItem::builder().program_data(x.program_data).buffer_info(item.buffer_info)
+    }
     pub fn new_item(renderer: impl Renderer, mesh_data: impl Bufferable + 'static, color_data: impl Bufferable + 'static) -> RenderItem {
         let info = BufferInfo::new(ctx).add_buffer(
             "a_position".into(),
@@ -29,4 +34,3 @@ pub mod vertex_color {
     }
     */
 }
-

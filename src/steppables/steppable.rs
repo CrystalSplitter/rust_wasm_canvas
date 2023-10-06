@@ -1,4 +1,5 @@
 use crate::js_bindings;
+use crate::spin::GameLoop;
 use crate::world_state::WorldState;
 
 pub enum StepError<T> {
@@ -35,7 +36,7 @@ impl<T: AsRef<str> + std::fmt::Display> StepError<T> {
             Recover(s) => {
                 js_bindings::warn(s.as_ref());
                 Ok(())
-            },
+            }
             e => Err(format!("{}", e)),
         }
     }
@@ -72,7 +73,7 @@ pub trait Steppable<S>: dyn_clone::DynClone {
         Ok(())
     }
     // Step on the main thread at an arbitrary rate.
-    fn step(&mut self, _state: &mut S) -> Result<(), StepError<String>> {
+    fn step(&mut self, _state: &mut S, _glp: &GameLoop) -> Result<(), StepError<String>> {
         Ok(())
     }
     // Step at a fixed rate.

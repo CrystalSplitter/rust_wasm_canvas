@@ -1,6 +1,7 @@
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use na::Vector3;
 use rand::random;
@@ -18,13 +19,25 @@ use crate::steppables::StepError::*;
 use crate::steppables::{StepError, Steppable};
 use crate::transform::Transform;
 use crate::util;
-use crate::world_object::{MeshComponent, RenderComponent, WorldObject3D, WorldObject3DInit};
-use crate::world_state::{RendQueueType, WorldState};
+use crate::world_object::{
+    Material, MeshComponent, RenderComponent, WorldObject3D, WorldObject3DInit,
+};
+use crate::world_state::WorldState;
 
 const FIXED_STEP_RATE: u64 = 1000 / 48;
 
+enum LoadInStage {
+    NotLoading,
+    Started,
+    Complete,
+}
+
 pub struct GameLoop {
     state: Arc<Mutex<WorldState>>,
+    shader_pg_data: BTreeMap<String, ProgramData>,
+    mesh_data_arcs: Vec<(String, Arc<Mutex<Option<String>>>)>,
+    load_in_stage: LoadInStage,
+    mesh_datas: BTreeMap<String, String>,
     last_step_start_t: u64,
     last_step_end_t: u64,
     last_fixed_step_end_t: u64,
@@ -35,6 +48,10 @@ impl GameLoop {
     pub fn empty() -> Self {
         Self {
             state: Arc::new(Mutex::new(WorldState::new())),
+            mesh_data_arcs: Default::default(),
+            shader_pg_data: Default::default(),
+            mesh_datas: Default::default(),
+            load_in_stage: LoadInStage::NotLoading,
             last_step_start_t: 0,
             last_step_end_t: 0,
             last_fixed_step_end_t: 0,
@@ -49,21 +66,75 @@ impl GameLoop {
         let world_depth = 400.;
 
         let mut state_mg = self.state.lock().unwrap();
-        let renderer = RendererOrtho3D::new(
-            ctx,
-            viewport_size,
-            viewport_size / ratio,
-            world_depth,
-        );
+        let renderer = RendererOrtho3D::new(ctx, viewport_size, viewport_size / ratio, world_depth);
         state_mg.set_renderer(renderer);
         state_mg.set_canvas(Some(Arc::new(canvas)));
     }
 
-    pub fn setup(
-        &mut self,
-        program: Rc<WebGlProgram>,
-        location_names: &[String],
-    ) -> Result<(), String> {
+    pub fn add_gl_program(&mut self, name: String, pg: WebGlProgram, location_names: &[String]) {
+        let s = self.state.lock().unwrap();
+        let renderer = s
+            .get_renderer()
+            .expect("Must bind canvas before adding Gl programs");
+        let locs: Vec<(_, _)> = location_names
+            .into_iter()
+            .map(|n: &String| {
+                let n = n.to_owned();
+                if n.starts_with("u_") {
+                    (GlLocationType::Uniform, n)
+                } else if n.starts_with("a_") {
+                    (GlLocationType::Attribute, n)
+                } else {
+                    panic!("Uniform did not begin with expected prefix");
+                }
+            })
+            .collect();
+        let pg_data = renderer.new_program_data(&pg, &locs);
+        self.shader_pg_data.insert(name, pg_data);
+    }
+
+    pub fn add_load_in_mesh(&mut self, url: String) {
+        self.mesh_data_arcs.push((url, Default::default()));
+    }
+
+    pub fn load_in(&mut self) -> Result<bool, String> {
+        let out = match self.load_in_stage {
+            LoadInStage::NotLoading => {
+                for (url, m) in self.mesh_data_arcs.iter_mut() {
+                    *m = crate::mesh::wavefront_obj::get_mesh_data_from_url(url.to_owned());
+                }
+                self.load_in_stage = LoadInStage::Started;
+                false
+            }
+            LoadInStage::Started => {
+                let mut done = true;
+                for (url, m) in self.mesh_data_arcs.iter_mut() {
+                    if let Ok(lock) = m.try_lock() {
+                        if let Some(data) = lock.as_ref() {
+                            self.mesh_datas.insert(url.to_owned(), data.to_owned());
+                        } else {
+                            done = false;
+                            break
+                        }
+                    } else {
+                        done = false;
+                        break
+                    }
+                }
+                if done {
+                    self.load_in_stage = LoadInStage::Complete;
+                }
+                done
+            }
+            LoadInStage::Complete => {
+                true
+            }
+        };
+        Ok(out)
+    }
+
+    /// Conduct game setup, prior to start and normal stepping behaviour.
+    pub fn setup(&mut self) -> Result<(), String> {
         let mut s = self.state.lock().unwrap();
         match s.get_canvas() {
             Some(canv_arc) => {
@@ -73,22 +144,17 @@ impl GameLoop {
                 return Err("Canvas not bound for input.".into());
             }
         }
-        if let Some(renderer) = s.get_renderer() {
-            let pg = make_program_data(
-                    &renderer.get_ctx(),
-                    program,
-                    location_names,
-                    &["a_position".into()],
-                );
-            crate::game::blocks::make_blocks(pg, &mut s)?;
-            let camera_tf = renderer.get_camera_tf();
-            s.add_scripted_component(crate::game::rotate_with_mouse::RotateWithMouse {
-                tf: camera_tf,
-            });
-        }
+        s.add_scripted_component(crate::game::blocks::BlockBehavior {
+            program_data: self.shader_pg_data["vertex_color"].clone(),
+            mesh_data: self.mesh_datas["assets/cube.obj"].clone(),
+        });
         /*
-            s.add_scripted_component(TorusGen::new());
-        }
+        s.add_scripted_component(TorusGen::new(
+            self.shader_pg_data
+                .get("vertex_color")
+                .expect("No vertex_color shader")
+                .clone(),
+        ));
         */
         Ok(())
     }
@@ -142,17 +208,18 @@ impl GameLoop {
         self.last_step_start_t = js_bindings::millis_now() as u64;
         let mut state_mg = self.state.lock().unwrap();
         let mut pre_step_cbs = state_mg.scripted_components();
-        state_mg.run_steps(&mut pre_step_cbs)?;
+        state_mg.run_steps(&self, &mut pre_step_cbs)?;
         self.last_step_end_t = js_bindings::millis_now() as u64;
 
         // Needs to be i64 due to possible integer negative overflow
-        if self.last_step_end_t as i64 - self.last_fixed_step_end_t as i64 > FIXED_STEP_RATE as i64 {
-            state_mg.run_fixed_steps(&mut pre_step_cbs)?;
+        if self.last_step_end_t as i64 - self.last_fixed_step_end_t as i64 > FIXED_STEP_RATE as i64
+        {
+            state_mg.run_fixed_steps(&self, &mut pre_step_cbs)?;
             self.last_fixed_step_end_t = js_bindings::millis_now() as u64;
         }
 
         let mut late_step_cbs = state_mg.scripted_components();
-        state_mg.run_late_steps(&mut late_step_cbs)?;
+        state_mg.run_late_steps(&self, &mut late_step_cbs)?;
         if let Some(r) = state_mg.get_renderer() {
             r.render_all(state_mg.get_rendqueue_mut())
         }
@@ -168,13 +235,17 @@ impl GameLoop {
         self.last_multistep_end_t = new_multistep_end_t;
         Ok(())
     }
+
+    pub fn get_mesh_data(&self, idx: usize) {
+        
+    }
 }
 
 fn set_rand_pos(tf: &mut Transform) {
     tf.set_position(Vector3::new(
-        random::<f32>().abs() * 1000.0,
-        random::<f32>().abs() * 500.0,
-        0.,
+        random::<f32>().abs() * 50.0,
+        random::<f32>().abs() * 50.0,
+        random::<f32>().abs() * 50.0,
     ));
 }
 
@@ -210,23 +281,26 @@ impl Steppable<WorldState> for TorusGen {
                     renderer: s
                         .get_renderer()
                         .ok_or_else(|| Fatal("No renderer".into()))?,
+                    material: Material {
+                        color: (1.0, 0.6, 1.0, 1.0),
+                    },
                 }),
                 mesh: Some(MeshComponent {
-                    data: mesh::wavefront_obj::into_vertex_vec().unwrap(),
+                    data: panic!("Not implemented"), //mesh::wavefront_obj::into_vertex_vec("ERROR").expect("Could not convert "),
                 }),
                 ..Default::default()
             }
             .init();
             let tf = new_obj.tf_rc.clone();
             set_rand_pos(&mut tf.borrow_mut());
-            tf.borrow_mut().set_scale(Vector3::new(20., 20., 20.));
+            tf.borrow_mut().set_scale(Vector3::new(1., 1., 1.));
             self.tf.push(tf);
             s.add_world_obj(new_obj);
         }
         Ok(())
     }
 
-    fn step(&mut self, s: &mut WorldState) -> Result<(), StepError<String>> {
+    fn step(&mut self, s: &mut WorldState, _: &GameLoop) -> Result<(), StepError<String>> {
         for t in &mut self.tf {
             spin_tf(
                 &mut t.borrow_mut(),
@@ -244,7 +318,7 @@ struct MouseFollower {
 }
 
 impl Steppable<WorldState> for MouseFollower {
-    fn step(&mut self, state: &mut WorldState) -> Result<(), StepError<String>> {
+    fn step(&mut self, state: &mut WorldState, _: &GameLoop) -> Result<(), StepError<String>> {
         let mut tf = self.tf.borrow_mut();
         match (state.get_inputs(), state.get_canvas()) {
             (Some(inputs), Some(canvas)) => {

@@ -32,7 +32,8 @@ module.exports = {
           {from: 'src/index.html', to: './'},
           {from: 'src/bootstrap.js', to: './'},
           {from: 'src/index.js', to: './'},
-          {from: 'src/glsl_shaders/*'}
+          {from: 'src/glsl_shaders/*'},
+          {from: 'assets/*'}
       ],
     }),
   ],

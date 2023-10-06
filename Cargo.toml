@@ -11,17 +11,22 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 num = "^0.4.0"
+futures = "^0.3"
 itertools = "^0.10.0"
-wasm-bindgen = "^0.2.63"
+wasm-bindgen = { version = "^0.2.63", features = ["serde-serialize"] }
+wasm-bindgen-futures = "^0.4"
 # Can't be higher than 0.26 due to rust-analyzer warning.
 nalgebra = "~0.25"
 console_error_panic_hook = { version = "0.1.6" }
 js-sys = "^0.3.50"
+serde = { version = "^1.0", features = ["derive"] }
+serde_derive = "^1.0"
 serde-wasm-bindgen = "^0.1.3"
 once_cell = "^1.7.2"
 wavefront_obj = "^10.0.0"
 dyn-clone = "^1.0.4"
 slab = "^0.4.3"
+typed-builder = "0.9.0"
 
 # Consider removing, as wee_alloc is slow.
 wee_alloc = { version = "0.4.5", optional = true }
@@ -36,15 +41,20 @@ features = [
     "Document",
     "DomRect",
     "Element",
+    "Headers",
     "HtmlCanvasElement",
     "MouseEvent",
     "Node",
+    "Request",
+    "RequestInit",
+    "RequestMode",
+    "Response",
     "WebGl2RenderingContext",
     "WebGlActiveInfo",
+    "WebGlBuffer",
     "WebGlProgram",
     "WebGlUniformLocation",
     "WebGlVertexArrayObject",
-    "WebGlBuffer",
     "Window",
     "console",
 ]
@@ -52,4 +62,4 @@ features = [
 [profile.release]
 # Optimise for code size.
 opt-level = "s"
-
+debug = true

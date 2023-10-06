@@ -17,15 +17,21 @@ pub struct MeshComponent {
     pub data: Vec<f32>,
 }
 
+pub struct Material {
+    pub color: (f32, f32, f32, f32),
+}
+
 pub struct RenderComponent {
     pub gl_program_data: ProgramData,
     pub renderer: Arc<dyn Renderer>,
+    pub material: Material,
 }
 
 pub struct WorldObject3DInit {
     pub tf: Transform,
     pub mesh: Option<MeshComponent>,
     pub render: Option<RenderComponent>,
+    pub render_item: Option<RenderItem>,
     pub scripts: Vec<Rc<dyn Steppable<WorldState>>>,
     pub children_ids: Vec<WorldObjectId>,
     pub parent_id: Option<WorldObjectId>,
@@ -37,22 +43,39 @@ impl WorldObject3DInit {
     pub fn init(self) -> WorldObject3D {
         let tf_rc = Rc::new(RefCell::new(self.tf));
         let obj = WorldObject3D {
-            render_item: match (self.render, self.mesh) {
-                (Some(rend), Some(m)) => {
+            render_item: match (self.render, self.mesh, self.render_item) {
+                (Some(rend), Some(m), None) => {
                     let ctx = rend.renderer.get_ctx();
-                    let buffer_info = BufferInfo::new(ctx.clone()).add_buffer(
-                        "a_position".into(),
-                        Box::new(m.data),
-                        BufferSettings::new(3, Gl::FLOAT),
-                    );
+                    let mut color_data = vec![];
+                    for _ in 0..m.data.len() / 3 {
+                        color_data.push(rend.material.color.0);
+                        color_data.push(rend.material.color.1);
+                        color_data.push(rend.material.color.2);
+                        color_data.push(rend.material.color.3);
+                    }
+                    let buffer_info = BufferInfo::new(ctx.clone())
+                        .add_buffer(
+                            "a_position".into(),
+                            m.data,
+                            BufferSettings::new(3, Gl::FLOAT),
+                        )
+                        .add_buffer(
+                            "a_color".into(),
+                            color_data,
+                            BufferSettings::new(4, Gl::FLOAT),
+                        );
                     let vao = ctx.create_vertex_array();
-                    Some(Rc::new(RenderItem::new_3d(
-                        rend.gl_program_data,
-                        tf_rc.clone(),
-                        buffer_info,
-                        vao.unwrap(),
-                    )))
+                    Some(Rc::new(
+                        RenderItem::builder()
+                            .buffer_info(buffer_info)
+                            .program_data(rend.gl_program_data)
+                            .tf(tf_rc.clone())
+                            .vao(vao.unwrap())
+                            .build()
+                            .unwrap(),
+                    ))
                 }
+                (None, None, Some(render_item)) => Some(Rc::new(render_item)),
                 _ => None,
             },
             self_id: None,
@@ -74,6 +97,7 @@ impl Default for WorldObject3DInit {
             scripts: vec![],
             children_ids: vec![],
             parent_id: None,
+            render_item: None,
             __non_exh: (),
         }
     }
@@ -83,7 +107,7 @@ pub struct WorldObject3D {
     pub tf_rc: Rc<RefCell<Transform>>,
     pub render_item: Option<Rc<RenderItem>>,
     pub name: String,
-    pub (super) self_id: Option<WorldObjectId>,
+    pub(super) self_id: Option<WorldObjectId>,
     children: Vec<WorldObjectId>,
     parent: Option<WorldObjectId>,
 }

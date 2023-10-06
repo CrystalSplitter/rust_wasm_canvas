@@ -1,11 +1,13 @@
 use crate::maths_utils::*;
 use na::{Matrix3, Matrix4, Rotation3, Vector2, Vector3, Vector4};
+use std::cell::RefCell;
 
 #[derive(Debug, Clone)]
 pub struct Transform {
     translation: Vector3<f32>,
     rotation: Vector3<f32>,
     scale: Vector3<f32>,
+    cached_scaling: Matrix4<f32>,
 }
 
 impl Transform {
@@ -14,6 +16,7 @@ impl Transform {
             translation: Vector3::zeros(),
             rotation: Vector3::zeros(),
             scale: Vector3::new(1., 1., 1.),
+            cached_scaling: Matrix4::identity(),
         }
     }
 
@@ -22,6 +25,7 @@ impl Transform {
             translation,
             rotation,
             scale,
+            cached_scaling: Matrix4::identity(),
         }
     }
 
@@ -52,14 +56,15 @@ impl Transform {
     }
 
     pub fn set_rotation(&mut self, rot: Vector4<f32>) -> &mut Self {
-        //self.rotation = rot;
         panic!();
     }
 
     pub fn set_scale(&mut self, scale: Vector3<f32>) -> &mut Self {
         self.scale = scale;
+        self.cached_scaling = Matrix4::new_nonuniform_scaling(&scale);
         self
     }
+
     pub fn get_scale(&self) -> Vector3<f32> {
         self.scale
     }
@@ -74,10 +79,21 @@ impl Transform {
     }
 
     pub fn to_mat4(&self) -> na::Matrix4<f32> {
-        (Matrix4::new_nonuniform_scaling(&self.scale)
+        let mut out = self.cached_scaling
             * Rotation3::from_euler_angles(self.rotation[0], self.rotation[1], self.rotation[2])
-                .to_homogeneous())
-        .append_translation(&self.translation)
+                .to_homogeneous();
+        out.append_translation_mut(&self.translation);
+        out
+    }
+
+    pub fn to_mat4_into<'a>(&self, out: &'a mut na::Matrix4<f32>) -> &'a mut na::Matrix4<f32> {
+        self.cached_scaling.mul_to(
+            &Rotation3::from_euler_angles(self.rotation[0], self.rotation[1], self.rotation[2])
+                .to_homogeneous(),
+            out,
+        );
+        out.append_translation_mut(&self.translation);
+        out
     }
 
     pub fn to_mat4_vec(&self) -> Vec<f32> {

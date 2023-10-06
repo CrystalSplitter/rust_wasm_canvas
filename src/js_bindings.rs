@@ -1,4 +1,8 @@
+use std::future::Future;
+
 use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
+use web_sys::window;
 
 use crate::inputs;
 
@@ -51,3 +55,24 @@ pub fn warn(s: &str) {
 pub fn millis_now() -> u32 {
     js_sys::Date::new_0().get_utc_milliseconds()
 }
+
+pub type IntervalType = (Closure<dyn FnMut()>, i32);
+
+pub fn ergonomic_interval(time_ms: i32, closure: impl FnMut() + 'static) -> Result<IntervalType, String> {
+    let window = window().ok_or("No global `window` exists. Exiting.")?;
+    let closure = Closure::wrap(Box::new(closure) as Box<dyn FnMut()>);
+    let r = window.set_interval_with_callback_and_timeout_and_arguments_0(
+        closure.as_ref().unchecked_ref(),
+        time_ms,
+    );
+    match r {
+        Ok(handle) => Ok((closure, handle)),
+        Err(e) => {
+            let e_string: String = e
+                .as_string()
+                .unwrap_or_else(|| "[Unable to display error]".into());
+            Err(format!("Unable to make interval: {}", &e_string))
+        }
+    }
+}
+
